@@ -1,0 +1,38 @@
+version: "3.9"  # optional since v1.27.0
+
+# docker-compose reference: https://docs.docker.com/compose/compose-file/compose-file-v3
+
+services:
+  main:
+    container_name: "${USER_NAME}-${PROJECT_NAME}"
+    image: ${PROJECT_NAME}:${USER_NAME}
+    build: .
+    # user: "${UID}:${GID}"
+    environment:
+      - DISPLAY=$DISPLAY
+      - TORCH_HOME=${DATASETS}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /dev:/dev
+      - /etc/passwd:/etc/passwd #just to get the user name by using getpwuid()
+      - type: bind
+        source: ./workspace
+        target: /workspace
+      - type: bind
+        source: ${DATASETS}
+        target: /datasets
+        volume:
+          nocopy: true
+        # read_only: true
+    deploy:
+    # For more information: https://docs.docker.com/compose/gpu-support/
+      resources:
+        limits:
+          cpus: ${CPU}
+          memory: ${MEMORY}
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+    privileged: true
+    command: tail -F anything

@@ -1,0 +1,54 @@
+# my_new_dataset_params.yaml
+root_dir: /path/to/my_data/
+
+train_dataset_params:
+  data_dir: ${dataset_params.root_dir}
+  samples_dir: my-data-train/images
+  targets_dir: my-data-train/annotations
+  input_dim: [640, 640]
+  transforms:
+    - DetectionHSV:
+        prob: 1.0                       # probability to apply HSV transform
+        hgain: 5                        # HSV transform hue gain (randomly sampled from [-hgain, hgain])
+        sgain: 30                       # HSV transform saturation gain (randomly sampled from [-sgain, sgain])
+        vgain: 30                       # HSV transform value gain (randomly sampled from [-vgain, vgain])
+        bgr_channels: [ 0, 1, 2 ]
+    - DetectionStandardize:
+        max_value: 255.
+    - DetectionTargetsFormatTransform:
+        input_format: XYWH_LABEL
+        output_format: LABEL_CXCYWH
+
+train_dataloader_params:
+  dataset: MyNewDetectionDataset
+  batch_size: 64
+  num_workers: 8
+  drop_last: True
+  shuffle: True
+  pin_memory: True
+  worker_init_fn:
+    _target_: super_gradients.training.utils.utils.load_func
+    dotpath: super_gradients.training.datasets.datasets_utils.worker_init_reset_seed
+  collate_fn:
+    _target_: super_gradients.training.utils.detection_utils.DetectionCollateFN
+
+val_dataset_params:
+  data_dir: ${dataset_params.root_dir}
+  samples_dir: my-data-val/images
+  targets_dir: my-data-val/annotations
+  input_dim: [640, 640]
+  transforms:
+    - DetectionStandardize:
+        max_value: 255.
+    - DetectionTargetsFormatTransform:
+        input_format: XYWH_LABEL
+        output_format: LABEL_CXCYWH
+
+val_dataloader_params:
+  dataset: MyNewDetectionDataset
+  batch_size: 64
+  num_workers: 8
+  drop_last: True
+  pin_memory: True
+  collate_fn:
+    _target_: super_gradients.training.utils.detection_utils.DetectionCollateFN
