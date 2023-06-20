@@ -1,16 +1,31 @@
+# PP-Yolo-E Detection training on COCO2017 Dataset:
+# PP-Yolo-E trained in 640x640
+# Recipe runs with batch size = 32 X 8 gpus = 256.
 
-################################
-#  Default Hyperparameters
-################################
+# Instructions:
+#   0. Make sure that the data is stored in dataset_params.dataset_dir or add "dataset_params.data_dir=<PATH-TO-DATASET>" at the end of the command below (feel free to check ReadMe)
+#   1. Move to the project root (where you will find the ReadMe and src folder)
+#   2. Run the command you want:
+#         ppyoloe_s: python -m super_gradients.train_from_recipe --config-name=coco2017_ppyoloe_s
+#         ppyoloe_m: python -m super_gradients.train_from_recipe --config-name=coco2017_ppyoloe_m
+#         ppyoloe_l: python -m super_gradients.train_from_recipe --config-name=coco2017_ppyoloe_l
+#         ppyoloe_x: python -m super_gradients.train_from_recipe --config-name=coco2017_ppyoloe_x
+#
+# Training times and accuracies (mAP@0.5-0.95 (COCO API, confidence 0.001, IoU threshold 0.6, test on 640x640 images):
+#         ppyoloe_s: 37h  on 8 NVIDIA GeForce RTX 3090, mAP: 42.52 (val)
+#         ppyoloe_m: 58h  on 8 NVIDIA GeForce RTX 3090, mAP: 47.11 (val)
+#         ppyoloe_l: 115h on 8 NVIDIA GeForce RTX 3090, mAP: 49.48 (val)
+#         ppyoloe_x: 240h on 8 NVIDIA GeForce RTX 3090, mAP: 51.15 (val)
+#
 
 defaults:
-  - default_train_params
+  - training_hyperparams: coco2017_ppyoloe_train_params
+  - dataset_params: coco_detection_ppyoloe_dataset_params
+  - arch_params: ppyoloe_s_arch_params
+  - checkpoint_params: default_checkpoint_params
   - ppyoloe_arch_params
   - _self_
-
-################################
-#  Architecture Hyperparameters
-################################
+  - variable_setup
 
 depth_mult: 0.33
 width_mult: 0.50
@@ -18,180 +33,41 @@ width_mult: 0.50
 backbone:
   pretrained_weights: https://deci-pretrained-models.s3.amazonaws.com/ppyolo_e/CSPResNetb_s_pretrained.pth
 
-################################
-#  Training hyperparameters
-################################
+train_dataloader: coco2017_train_ppyoloe
+val_dataloader: coco2017_val_ppyoloe
 
-max_epochs: 10 #500
-static_assigner_end_epoch: 5 #150
+load_checkpoint: False
+resume: False
 
-warmup_mode: "linear_batch_step"
-warmup_initial_lr:  1e-6
-lr_warmup_steps: 1000
-lr_warmup_epochs: 0
+dataset_params:
+  train_dataloader_params:
+    batch_size: 8
 
-initial_lr:  2e-3
-lr_mode: cosine
-cosine_final_lr_ratio: 0.1
+training_hyperparams:
+  resume: ${resume}
+  mixed_precision: True
+  max_epochs: 5
 
-zero_weight_decay_on_bias_and_bn: False
-batch_accumulate: 1
+arch_params:
+  num_classes: 80
+architecture: pp_yoloe_s
 
-# save_ckpt_epoch_list: [200, 250, 300, 350, 400, 450]
+checkpoint_params:
+  load_checkpoint: False # whether to load checkpoint
+  load_backbone: False # whether to load only backbone part of checkpoint
+  checkpoint_path: # checkpoint path that is located in super_gradients/checkpoints
+  external_checkpoint_path: # checkpoint path that is not located in super_gradients/checkpoints
+  source_ckpt_folder_name: # dirname for checkpoint loading
+  strict_load: # key matching strictness for loading checkpoint's weights
+    _target_: super_gradients.training.sg_trainer.StrictLoad
+    value: no_key_matching
+  pretrained_weights: 'coco' # a string describing the dataset of the pretrained weights (for example "imagenent").
 
-loss:
-  ppyoloe_loss:
-    num_classes: ${arch_params.num_classes}
-    reg_max: ${arch_params.head.reg_max}
+ckpt_root_dir: /workspace/ckp
 
-optimizer: AdamW
-optimizer_params:
-  weight_decay: 0.0001
 
-ema: True
-ema_params:
-  decay: 0.9997
-  decay_type: threshold
+# multi_gpu: DDP
+num_gpus: 1
 
-mixed_precision: False
-sync_bn: True
-
-valid_metrics_list:
-  - DetectionMetrics:
-      score_thres: 0.1
-      top_k_predictions: 300
-      num_cls: ${arch_params.num_classes}
-      normalize_targets: True
-      post_prediction_callback:
-        _target_: super_gradients.training.models.detection_models.pp_yolo_e.PPYoloEPostPredictionCallback
-        score_threshold: 0.01
-        nms_top_k: 1000
-        max_predictions: 300
-        nms_threshold: 0.7
-
-pre_prediction_callback:
-
-phase_callbacks:
-  - PPYoloETrainingStageSwitchCallback:
-      static_assigner_end_epoch: ${training_hyperparams.static_assigner_end_epoch}
-
-metric_to_watch: 'mAP@0.50:0.95'
-greater_metric_to_watch_is_better: True
-
-################################
-#     Dataset/Dataloader
-################################
-
-train_dataset_params:
-  data_dir: /datasets/hard_hat # root path to data
-  subdir: train # sub directory path of data_dir containing the train data.
-  # json_file: instances_train2017.json # path to coco train json file, data_dir/annotations/train_json_file.
-  input_dim: [640, 640] # None, do not resize dataset on load
-  cache_dir:
-  cache: False
-  transforms:
-    - DetectionRandomAffine:
-        degrees: 0                    # rotation degrees, randomly sampled from [-degrees, degrees]
-        translate: 0.25               # image translation fraction
-        scales: [ 0.5, 1.5 ]          # random rescale range (keeps size by padding/cropping) after mosaic transform.
-        shear: 0.0                    # shear degrees, randomly sampled from [-degrees, degrees]
-        target_size:
-        filter_box_candidates: True   # whether to filter out transformed bboxes by edge size, area ratio, and aspect ratio.
-        wh_thr: 2                     # edge size threshold when filter_box_candidates = True (pixels)
-        area_thr: 0.1                 # threshold for area ratio between original image and the transformed one, when when filter_box_candidates = True
-        ar_thr: 20                    # aspect ratio threshold when filter_box_candidates = True
-    - DetectionRandomRotate90:
-        prob: 0.5
-    - DetectionRGB2BGR:
-        prob: 0.25
-    - DetectionHSV:
-        prob: 0.5                       # probability to apply HSV transform
-        hgain: 18                       # HSV transform hue gain (randomly sampled from [-hgain, hgain])
-        sgain: 30                       # HSV transform saturation gain (randomly sampled from [-sgain, sgain])
-        vgain: 30                       # HSV transform value gain (randomly sampled from [-vgain, vgain])
-    - DetectionHorizontalFlip:
-        prob: 0.5                       # probability to apply horizontal flip
-    - DetectionMixup:
-        input_dim:
-        mixup_scale: [ 0.5, 1.5 ]         # random rescale range for the additional sample in mixup
-        prob: 0.5                       # probability to apply per-sample mixup
-        flip_prob: 0.5                  # probability to apply horizontal flip
-    - DetectionNormalize:
-        mean: [ 123.675, 116.28, 103.53 ]
-        std: [ 58.395,  57.12,  57.375 ]
-    - DetectionTargetsFormatTransform:
-        output_format: LABEL_CXCYWH
-
-  tight_box_rotation: False
-  class_inclusion_list:
-  max_num_samples:
-  with_crowd: False
-
-train_dataloader_params:
-  batch_size: 8
-  num_workers: 8
-  shuffle: True
-  drop_last: True
-  # Disable pin_memory due to presence of PPYoloECollateFN with uses random resize during training
-  pin_memory: False
-  worker_init_fn:
-    _target_: super_gradients.training.utils.utils.load_func
-    dotpath: super_gradients.training.datasets.datasets_utils.worker_init_reset_seed
-  collate_fn: # collate function for trainset
-    _target_: super_gradients.training.utils.detection_utils.PPYoloECollateFN
-    random_resize_sizes: [ 320, 352, 384, 416, 448, 480, 512, 544, 576, 608, 640, 672, 704, 736, 768 ]
-    random_resize_modes:
-      - 0 # cv::INTER_NEAREST
-      - 1 # cv::INTER_LINEAR
-      - 2 # cv::INTER_CUBIC
-      - 3 # cv::INTER_AREA
-      - 4 # cv::INTER_LANCZOS4
-
-val_dataset_params:
-  data_dir: /datasets/hard_hat # root path to coco data
-  subdir: valid # sub directory path of data_dir containing the train data.
-  # json_file: instances_val2017.json # path to coco train json file, data_dir/annotations/train_json_file.
-  input_dim:
-  cache_dir:
-  cache: False
-  transforms:
-    - DetectionRescale:
-        output_shape: [640, 640]
-    - DetectionNormalize:
-        mean: [ 123.675, 116.28, 103.53 ]
-        std: [ 58.395,  57.12,  57.375 ]
-    - DetectionTargetsFormatTransform:
-        output_format: LABEL_CXCYWH
-  tight_box_rotation: False
-  class_inclusion_list:
-  max_num_samples:
-  with_crowd: True
-
-val_dataloader_params:
-  batch_size: 8
-  num_workers: 8
-  drop_last: False
-  shuffle: False
-  pin_memory: False
-  collate_fn: # collate function for valset
-    _target_: super_gradients.training.utils.detection_utils.CrowdDetectionPPYoloECollateFN
-
-################################
-#     Quantization Awareness
-################################
-
-ptq_only: False              # whether to launch QAT, or leave PTQ only
-selective_quantizer_params:
-  calibrator_w: "max"        # calibrator type for weights, acceptable types are ["max", "histogram"]
-  calibrator_i: "histogram"  # calibrator type for inputs acceptable types are ["max", "histogram"]
-  per_channel: True          # per-channel quantization of weights, activations stay per-tensor by default
-  learn_amax: False          # enable learnable amax in all TensorQuantizers using straight-through estimator
-  skip_modules:              # optional list of module names (strings) to skip from quantization
-
-calib_params:
-  histogram_calib_method: "percentile"  # calibration method for all "histogram" calibrators, acceptable types are ["percentile", "entropy", mse"], "max" calibrators always use "max"
-  percentile: 99.99                     # percentile for all histogram calibrators with method "percentile", other calibrators are not affected
-  num_calib_batches:                    # number of batches to use for calibration, if None, 512 / batch_size will be used
-  verbose: False                        # if calibrator should be verbose
-
-_convert_: all
+experiment_suffix: ""
+experiment_name: coco2017_${architecture}${experiment_suffix}

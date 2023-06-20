@@ -4,4 +4,5 @@ click
 matplotlib
 tqdm
 torchinfo
+albumentations
 openvino-dev==2023.0.0
